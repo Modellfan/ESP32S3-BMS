@@ -6,10 +6,12 @@
 #include "USBCDC.h"
 #include <TaskScheduler.h>
 
+#include "swc_isa_shunt.h"
+
 // Define GVRET_PORT and MONITOR_PORT.
 // GVRET communication uses the primary Serial port.
 // Monitoring/debug output uses USBSerial1.
-#define GVRET_PORT Serial
+#define GVRET_PORT Serial // USB Enhanced Serial CH343
 #define MONITOR_PORT USBSerial1
 
 // USB Serial Setup: Use a clear name for the USB CDC object.
@@ -23,6 +25,7 @@ USBCDC USBSerial1(0); // First virtual serial port
 // #define RGB_BRIGHTNESS 0    // 0 for OFF
 
 Scheduler runner;
+Shunt_IVTS shunt(/*little_endian=*/false);
 
 /**************************************************************************
  *  Function Prototypes
@@ -36,7 +39,6 @@ void printStatus();
  **************************************************************************/
 Task taskBlinkLED(500, TASK_FOREVER, &blinkLED, &runner, true);
 Task taskPrintStatus(500, TASK_FOREVER, &printStatus, &runner, true);
-
 
 /**************************************************************************
  *  Passthrough CAN
@@ -53,6 +55,8 @@ void passthroughCAN()
         can.receive(frame);
         can2.tryToSend(frame);
         sendFrameToUSB(frame, 0);
+
+        shunt.DecodeCAN(frame);
     }
 
     // -------------------------------------------------------------
@@ -62,7 +66,7 @@ void passthroughCAN()
     {
         can2.receive(frame);
         can.tryToSend(frame);
-        sendFrameToUSB(frame, 1);       
+        sendFrameToUSB(frame, 1);
     }
 }
 
@@ -77,7 +81,11 @@ void blinkLED()
  **************************************************************************/
 void printStatus()
 {
-    MONITOR_PORT.println("Status");
+    MONITOR_PORT.printf("I=%.2f A  U1=%.2f V  T=%.1f C  W=%.1f\n",
+                        shunt.current_A(),
+                        shunt.u1_V(),
+                        shunt.temp_C(),
+                        shunt.power_W());
 }
 
 /**************************************************************************
@@ -86,7 +94,7 @@ void printStatus()
 void setup()
 {
     // Initialize the primary Serial port for GVRET communication.
-    Serial.begin(250000);
+    Serial.begin(1000000);
 
     // Initialize USB CDC for monitoring/debug output.
     USBSerial1.begin();
